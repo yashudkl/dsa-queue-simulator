@@ -1,4 +1,5 @@
-//Compiling Command gcc main.c -o game.exe -lraylib -lopengl32 -lgdi32 -lwinmm
+//Compiling Command
+// Using MSYS2 MINGW64 Shell   gcc main.c -o game.exe -lraylib -lopengl32 -lgdi32 -lwinmm
 
 #include "raylib.h"
 
