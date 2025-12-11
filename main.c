@@ -48,12 +48,6 @@ static void InitVehicles(void) {
     for (int i = 0; i < MAX_VEH; i++) vehicles[i].active = false;
 }
 
-static int ActiveCount(void) {
-    int c = 0;
-    for (int i = 0; i < MAX_VEH; i++) if (vehicles[i].active) c++;
-    return c;
-}
-
 static int LaneCount(int road, int lane) {
     int c = 0;
     for (int i = 0; i < MAX_VEH; i++) {
@@ -77,8 +71,6 @@ static void GenerateVehicleNumber(char *buffer) {
 
 // Spawn a vehicle at the edge of a given road/lane
 static void SpawnVehicle(int road, int lane, const char *plateOpt) {
-    if (ActiveCount() >= MAX_ACTIVE) return; // hard cap
-    if (LaneCount(road, lane) >= 8) return;  // per-lane cap
     for (int i = 0; i < MAX_VEH; i++) {
         if (!vehicles[i].active) {
             vehicles[i].active = true;
@@ -338,8 +330,8 @@ static void PollVehicleFile(void) {
             case 'D': road = 3; break;
         }
         if (road < 0 || lane < 0 || lane > 2) continue;
-        // If lane already saturated (>=10), skip this spawn
-        if (LaneCount(road, lane) >= 10) { laneSatTimer[road][lane] = 3.0f; continue; }
+        // If lane already saturated (>=10), record alert but still spawn
+        if (LaneCount(road, lane) >= 10) laneSatTimer[road][lane] = 3.0f;
         SpawnVehicle(road, lane, plate);
         if (++spawned >= MAX_SPAWNS_PER_TICK) break; // avoid burst spawning
     }
