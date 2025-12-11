@@ -4,6 +4,12 @@
 #include "raylib.h"
 #include <stdlib.h>
 #include <stdio.h>
+// Build (MSYS2 MinGW64 example):
+// gcc main.c -o simulator.exe -lraylib -lopengl32 -lgdi32 -lwinmm
+
+#include "raylib.h"
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 // Roads: 0=A (top), 1=B (bottom), 2=C (right), 3=D (left)
@@ -28,7 +34,7 @@ static const float VEH_SPEED = 80.0f;   // slower base speed
 static const float CAR_LEN = 36.0f;      // vehicle length for spacing
 static const float CAR_WID = 18.0f;      // vehicle width for drawing
 static const float MIN_HEADWAY = 24.0f;  // min gap to avoid overlap
-static const int MAX_SPAWNS_PER_TICK = 4; // limit burst spawns from file
+static const int MAX_SPAWNS_PER_TICK = 16; // allow faster buildup for saturation
 static float laneSatTimer[4][3] = {0};    // saturation alert timers per lane
 
 // Layout constants
@@ -275,7 +281,7 @@ static void DrawLaneLabels(void) {
 }
 
 static void DrawLaneAlerts(void) {
-    int y = 20;
+    int y = 50; // push down to avoid overlapping the HUD header
     for (int r = 0; r < 4; r++) {
         for (int l = 0; l < 3; l++) {
             if (laneSatTimer[r][l] > 0) {
@@ -330,9 +336,13 @@ static void PollVehicleFile(void) {
             case 'D': road = 3; break;
         }
         if (road < 0 || lane < 0 || lane > 2) continue;
-        // If lane already saturated (>=10), record alert but still spawn
-        if (LaneCount(road, lane) >= 10) laneSatTimer[road][lane] = 3.0f;
+        int before = LaneCount(road, lane);
+        if (before >= 10) laneSatTimer[road][lane] = 3.0f; // already saturated
+
         SpawnVehicle(road, lane, plate);
+
+        int after = LaneCount(road, lane);
+        if (after >= 10) laneSatTimer[road][lane] = 3.0f; // hit or stay saturated after spawn
         if (++spawned >= MAX_SPAWNS_PER_TICK) break; // avoid burst spawning
     }
 
