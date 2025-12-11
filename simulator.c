@@ -1,11 +1,5 @@
 // Build (MSYS2 MinGW64 example):
-// gcc main.c -o simulator.exe -lraylib -lopengl32 -lgdi32 -lwinmm
-
-#include "raylib.h"
-#include <stdlib.h>
-#include <stdio.h>
-// Build (MSYS2 MinGW64 example):
-// gcc main.c -o simulator.exe -lraylib -lopengl32 -lgdi32 -lwinmm
+// gcc simulator.c -o simulator.exe -lraylib -lopengl32 -lgdi32 -lwinmm
 
 #include "raylib.h"
 #include <stdlib.h>
@@ -13,7 +7,7 @@
 #include <string.h>
 
 // Roads: 0=A (top), 1=B (bottom), 2=C (right), 3=D (left)
-// Lanes per road: 0 = L1 incoming, 1 = L2 priority (obeys light), 2 = L3 free left-turn
+// Lanes per road: 0 = L1 incoming, 1 = L2 outgoing (obeys light), 2 = L3 free left-turn
 typedef struct {
     float x, y;
     float vx, vy;
@@ -113,11 +107,18 @@ static void SpawnVehicle(int road, int lane, const char *plateOpt) {
     }
 }
 
-// Lane rules: L3 free left-turn never stops; L1/L2 obey lights; only one road green at a time
+// Lane rules:
+// - L1 (lane index 0) = incoming lane (does NOT obey traffic light here)
+// - L2 (lane index 1) = controlled/outgoing lane (obeys light)
+// - L3 (lane index 2) = free left-turn (never stops)
+// Only L2 should stop when the road is not green.
 static bool ShouldStop(const Vehicle *v) {
-    if (v->lane == 2) return false;        // free left-turn
-    // L1 and L2 both obey the light; priority condition removed
-    if (v->road != currentGreen) return true; // red for this road
+    if (v->lane == 2) return false;        // free left-turn never stops
+    if (v->lane == 1) {                    // only L2 obeys the traffic light
+        if (v->road != currentGreen) return true; // red for this road
+        return false;
+    }
+    // L1 (lane 0) does not obey the road-level traffic light in this simplified model
     return false;
 }
 
@@ -157,6 +158,8 @@ static void UpdateVehicles(float dt) {
         switch (v->road) {
             case 0: { // top moving down
                 bool beforeStop = v->y < centerY - stopOffset;
+                // For L2 (lane==1) we may stop before stop line when red.
+                // L1 (lane==0) and L3 (lane==2) won't be stopped by road light here.
                 v->vy = (stop && beforeStop) ? 0 : VEH_SPEED;
                 if (tooClose) v->vy = 0;
                 v->vx = 0;
