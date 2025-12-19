@@ -9,7 +9,7 @@ This project showcases how the Queue data structure (FIFO - First In First Out) 
 
 ## Raylib for simulation
 
-Instead of using provided SDL2 simulation I am doing everything from scratch with raylib 
+Instead of using provided SDL2 simulation I am doing everything from scratch with raylib.
 
 ### raylib vs SDL2 (Brief Comparison)
 
@@ -19,6 +19,6 @@ raylib is a simple, beginner-friendly, and open-source C library designed for le
 
 For this project, raylib was chosen because it is more simple, open-source, and helps clearly visualize queue behavior while keeping the data-structure implementation independent of the graphics library.
 
-Reference
-Website: https://www.raylib.com
+Reference <br>
+Website: https://www.raylib.com <br>
 GitHub: https://github.com/raysan5/raylib
