@@ -35,6 +35,7 @@ This causes: <br>
    * Unfair vehicle dispatch <br>
    * Traffic congestion at busy roads <br>
    
-<img width="595" height="467" alt="{7D39CF37-901A-4B93-AC19-0A2E86005916}" src="https://github.com/user-attachments/assets/34590d67-00e3-447d-93ff-4425ad78d015" />
+<img width="599" height="452" alt="{3C76168F-4A97-4043-BD08-3C940AF7EDF2}" src="https://github.com/user-attachments/assets/0b479d0b-a73e-42a4-b7ec-66112f3c4418" />
+
 <br>
 Here red AUD at top left shows that lane has crossed 10 or more than 10 vehicles
