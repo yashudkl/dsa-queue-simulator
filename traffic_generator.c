@@ -3,12 +3,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 #define FILENAME "vehicles.data"
 #define MAX_LINES 5000 ///Limits 5000 vehicles
 #define MAX_LINE_LENGTH 64
 #define TRIM_INTERVAL 1000
+
+// Cross-platform millisecond sleep
+static void sleep_ms(int ms) {
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
+    usleep(ms * 1000);
+#endif
+}
 
 // Generate a random vehicle number
 static void GenerateVehicleNumber(char *buffer) {
@@ -68,27 +82,38 @@ int main(void) {
     int vehicleCount = 0;
 
     while (1) {
-        char plate[9];
-        char road;
-        int lane;
+        // Decide how many vehicles to emit this tick. Roughly:
+        // - 20% chance of a burst (5-12 vehicles)
+        // - otherwise 1-3 vehicles
+        int burstSize = 1 + rand() % 3;
+        if ((rand() % 100) < 20) burstSize = 5 + rand() % 8;
 
-        GenerateVehicleNumber(plate);
-        PickRoadLane(&road, &lane);
+        for (int i = 0; i < burstSize; i++) {
+            char plate[9];
+            char road;
+            int lane;
 
-        fprintf(file, "%s:%c:%d\n", plate, road, lane);
-        fflush(file);
+            GenerateVehicleNumber(plate);
+            PickRoadLane(&road, &lane);
 
-        printf("Generated: %s:%c:%d\n", plate, road, lane);
+            fprintf(file, "%s:%c:%d\n", plate, road, lane);
+            fflush(file);
 
-        vehicleCount++;
-        if (vehicleCount % TRIM_INTERVAL == 0) {
-            fclose(file);
-            TrimFile(FILENAME);
-            file = fopen(FILENAME, "a");
-            if (!file) break;
+            printf("Generated: %s:%c:%d\n", plate, road, lane);
+
+            vehicleCount++;
+            if (vehicleCount % TRIM_INTERVAL == 0) {
+                fclose(file);
+                TrimFile(FILENAME);
+                file = fopen(FILENAME, "a");
+                if (!file) return 0;
+            }
         }
 
-        sleep(1);
+        // Randomize delay so bursts sometimes pile up and trigger saturation in UI.
+        int delayMs = 150 + rand() % 550;      // 150-700ms typical gap
+        if ((rand() % 100) < 10) delayMs = 30; // occasional near-immediate follow-up
+        sleep_ms(delayMs);
     }
 
     fclose(file);
