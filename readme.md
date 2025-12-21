@@ -22,9 +22,9 @@ For this project, raylib was chosen because it is more simple, open-source, and 
 Reference <br>
 Website: https://www.raylib.com <br>
 GitHub: https://github.com/raysan5/raylib
-
-##Before (Problem)
 <br>
+
+## Before (Problem)<br>
 * Vehicles arrive randomly from roads A, B, C, and D. <br>
 * Traffic lights operate without considering queue size. <br>
 * All lanes are treated equally, even if some are heavily congested. <br>
