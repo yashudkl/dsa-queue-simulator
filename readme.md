@@ -22,3 +22,19 @@ For this project, raylib was chosen because it is more simple, open-source, and 
 Reference <br>
 Website: https://www.raylib.com <br>
 GitHub: https://github.com/raysan5/raylib
+
+##Before (Problem)
+<br>
+* Vehicles arrive randomly from roads A, B, C, and D. <br>
+* Traffic lights operate without considering queue size. <br>
+* All lanes are treated equally, even if some are heavily congested. <br>
+* Priority lane (AL2) is not recognized as special. <br>
+* Green light duration is fixed, not based on number of vehicles. <br>
+This causes: <br>
+   *Long waiting times <br>
+   *Unfair vehicle dispatch <br>
+   *Traffic congestion at busy roads <br>
+   
+<img width="595" height="467" alt="{7D39CF37-901A-4B93-AC19-0A2E86005916}" src="https://github.com/user-attachments/assets/34590d67-00e3-447d-93ff-4425ad78d015" />
+<br>
+Here red AUD at top left shows that lane has crossed 10 or more than 10 vehicles
