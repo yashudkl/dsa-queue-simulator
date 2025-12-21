@@ -31,9 +31,9 @@ GitHub: https://github.com/raysan5/raylib
 * Priority lane (AL2) is not recognized as special. <br>
 * Green light duration is fixed, not based on number of vehicles. <br>
 This causes: <br>
-   *Long waiting times <br>
-   *Unfair vehicle dispatch <br>
-   *Traffic congestion at busy roads <br>
+   * Long waiting times <br>
+   * Unfair vehicle dispatch <br>
+   * Traffic congestion at busy roads <br>
    
 <img width="595" height="467" alt="{7D39CF37-901A-4B93-AC19-0A2E86005916}" src="https://github.com/user-attachments/assets/34590d67-00e3-447d-93ff-4425ad78d015" />
 <br>
