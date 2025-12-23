@@ -20,9 +20,10 @@ typedef struct {
 #define MAX_VEH 64
 
 static Vehicle vehicles[MAX_VEH];
-static int currentGreen = 0;          // only this road is green (state 2), others red (state 1)
-static float lightTimer = 0.0f;
-static const float LIGHT_PERIOD = 6.0f; // seconds per phase
+static int currentGreen = 1;          // only this road is green (state 2), others red (state 1); start with road B
+static float phaseTimer = 0.0f;       // tracks elapsed time in current green phase
+static float currentGreenDuration = 0.0f; // duration for current green phase, computed from lane averages
+static const float TIME_PER_VEHICLE = 0.8f; // T = constant time per vehicle (seconds)
 static long vehiclesFilePos = 0;
 static const float VEH_SPEED = 80.0f;   // slower base speed
 static const float CAR_LEN = 36.0f;      // vehicle length for spacing
@@ -67,6 +68,32 @@ static void GenerateVehicleNumber(char *buffer) {
     buffer[6] = '0' + GetRandomValue(0, 9);
     buffer[7] = '0' + GetRandomValue(0, 9);
     buffer[8] = '\0';
+}
+
+// Average queue length across controlled lanes (BL2, CL2, DL2)
+static float calculateAverageVehicles(void) {
+    int sum = 0;
+    sum += LaneCount(1, 1); // road B, lane L2
+    sum += LaneCount(2, 1); // road C, lane L2
+    sum += LaneCount(3, 1); // road D, lane L2
+    return sum / 3.0f;      // n = 3 lanes
+}
+
+// Green duration derived from average vehicles; clamp to at least one vehicle slot
+static float calculateGreenDuration(void) {
+    float avg = calculateAverageVehicles();
+    float duration = avg * TIME_PER_VEHICLE;
+    if (duration < TIME_PER_VEHICLE) duration = TIME_PER_VEHICLE;
+    return duration;
+}
+
+// Deterministic rotation among controlled roads: B -> C -> D -> B ...
+static int NextControlledRoad(int road) {
+    switch (road) {
+        case 1: return 2;
+        case 2: return 3;
+        default: return 1;
+    }
 }
 
 // Spawn a vehicle at the edge of a given road/lane
@@ -361,6 +388,9 @@ int main(void) {
     InitVehicles();
     SetRandomSeed((unsigned int)GetTime());
 
+    // Initialize first green duration using current queue snapshot
+    currentGreenDuration = calculateGreenDuration();
+
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
 
@@ -386,11 +416,12 @@ int main(void) {
         centerX = newCenterX;
         centerY = newCenterY;
 
-        // Light FSM: only one green; rotate A->B->C->D
-        lightTimer += dt;
-        if (lightTimer >= LIGHT_PERIOD) {
-            lightTimer = 0.0f;
-            currentGreen = (currentGreen + 1) % 4;
+        // Light FSM: only one green; rotate B -> C -> D with duration based on queue average
+        phaseTimer += dt;
+        if (phaseTimer >= currentGreenDuration) {
+            phaseTimer = 0.0f;
+            currentGreen = NextControlledRoad(currentGreen);
+            currentGreenDuration = calculateGreenDuration();
         }
 
         // Decay lane saturation timers
@@ -410,7 +441,7 @@ int main(void) {
         DrawLaneMarkers();
         DrawLaneLabels();
         DrawLaneAlerts();
-        DrawText(TextFormat("Green: %c   Phase: %.1f/%.0f", 'A'+currentGreen, lightTimer, LIGHT_PERIOD), 20, 20, 22, BLACK);
+        DrawText(TextFormat("Green: %c   Phase: %.1f/%.1f", 'A'+currentGreen, phaseTimer, currentGreenDuration), 20, 20, 22, BLACK);
         EndDrawing();
     }
 
