@@ -10,7 +10,37 @@
 #include <unistd.h>
 #endif
 
+// Filename for IPC with simulator
 #define FILENAME "vehicles.data"
+
+static FILE *g_file = NULL;
+
+static void cleanup(void) {
+    // Close the open append handle if still open
+    if (g_file) {
+        fclose(g_file);
+        g_file = NULL;
+    }
+    // Truncate the vehicles file (delete contents)
+    FILE *f = fopen(FILENAME, "w");
+    if (f) fclose(f);
+}
+
+#ifdef _WIN32
+static BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
+    cleanup();
+    // allow the process to exit
+    ExitProcess(0);
+    return TRUE;
+}
+#else
+static void sigint_handler(int signo) {
+    (void)signo;
+    cleanup();
+    _exit(0);
+}
+#endif
+
 #define MAX_LINES 5000 ///Limits 5000 vehicles
 #define MAX_LINE_LENGTH 64
 #define TRIM_INTERVAL 1000
@@ -77,6 +107,16 @@ int main(void) {
         return 1;
     }
 
+    g_file = file;
+
+    /* register cleanup handlers so the file is truncated when this generator exits */
+    atexit(cleanup);
+#ifdef _WIN32
+    SetConsoleCtrlHandler(CtrlHandler, TRUE);
+#else
+    signal(SIGINT, sigint_handler);
+#endif
+
     srand((unsigned int)time(NULL));
 
     int vehicleCount = 0;
@@ -107,6 +147,7 @@ int main(void) {
                 TrimFile(FILENAME);
                 file = fopen(FILENAME, "a");
                 if (!file) return 0;
+                g_file = file;
             }
         }
 
