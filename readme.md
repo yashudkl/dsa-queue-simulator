@@ -30,14 +30,13 @@ GitHub: https://github.com/raysan5/raylib
 
 ### 1️⃣ Install dependencies
 bash <br>
-`sudo pacman -S gcc raylib`
+`sudo pacman -S gcc raylib pkgconf`
 ### 2️⃣ Compile programs
 Traffic generator (console-only) <br>
-`gcc traffic_generator.c -o traffic_generator`
+`gcc -Wall -O2 traffic_generator.c -o traffic_generator.exe`
 <br> <br>
 Simulator (raylib GUI) <br>
-`gcc simulator.c -o simulator \
-    -lraylib -lm -lpthread -ldl -lrt -lX11 `
+`gcc -Wall -O2 simulator.c -o simulator.exe $(pkg-config --cflags --libs raylib)`
 
 ### 3️⃣ Run 
 `touch vehicles.data 
@@ -56,15 +55,14 @@ Open MSYS2 MinGW64 from the Start Menu.
 
 ### 2️⃣ Install dependencies
 
-`pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-raylib`
+`pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-raylib mingw-w64-x86_64-pkg-config`
 
 ### 3️⃣ Compile programs
 Traffic generator
 `gcc traffic_generator.c -o traffic_generator.exe`
 
 Simulator
-`gcc simulator.c -o simulator.exe \
-    -lraylib -lopengl32 -lgdi32 -lwinmm`
+`gcc -Wall -O2 simulator.c -o simulator.exe $(pkg-config --cflags --libs raylib)`
 
 ### 4️⃣ Run
 `traffic_generator.exe and
@@ -82,6 +80,24 @@ This causes: <br>
    * Traffic congestion at busy roads <br>
    
 <img width="599" height="452" alt="{3C76168F-4A97-4043-BD08-3C940AF7EDF2}" src="https://github.com/user-attachments/assets/0b479d0b-a73e-42a4-b7ec-66112f3c4418" />
-
+<br>
 <br>
 Here red AUD at top left shows that lane has crossed 10 or more than 10 vehicles
+<br>
+
+## After (Solution) <br>
+* AL2 is served immediately when congested
+* Waiting time in AL2 is reduced
+* Normal lanes are served fairly
+* System performance improves partially
+<br>
+<img width="594" height="468" alt="image" src="https://github.com/user-attachments/assets/f73a8d88-58a8-4b89-9551-e0506620dde6" />
+<br>
+<br>
+Here AUD at top right shows that priotiry condition is active and vehicles in lane AL2 is given priority in saturation 
+
+#### Note: The system improves traffic flow using a single priority lane, but does not fully optimize congestion for all lanes.
+
+
+
+
