@@ -24,6 +24,52 @@ Website: https://www.raylib.com <br>
 GitHub: https://github.com/raysan5/raylib
 <br>
 
+## Traffic Queue Simulator — Installation & Running Guide
+
+### 🐧 Arch Linux — Build & Run
+
+### 1️⃣ Install dependencies
+bash <br>
+`sudo pacman -S gcc raylib`
+### 2️⃣ Compile programs
+Traffic generator (console-only) <br>
+`gcc traffic_generator.c -o traffic_generator`
+<br> <br>
+Simulator (raylib GUI) <br>
+`gcc simulator.c -o simulator \
+    -lraylib -lm -lpthread -ldl -lrt -lX11 `
+
+### 3️⃣ Run 
+`touch vehicles.data <br>
+./traffic_generator &
+./simulator`
+
+### 🪟 Windows — Build & Run (MSYS2 MinGW64)
+
+#### ⚠️ Must be executed inside MSYS2 MinGW64 shell
+
+### 1️⃣ Install MSYS2
+
+`Download from: https://www.msys2.org` <br>
+
+Open MSYS2 MinGW64 from the Start Menu.
+
+### 2️⃣ Install dependencies
+
+`pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-raylib`
+
+### 3️⃣ Compile programs
+Traffic generator
+`gcc traffic_generator.c -o traffic_generator.exe`
+
+Simulator
+`gcc simulator.c -o simulator.exe \
+    -lraylib -lopengl32 -lgdi32 -lwinmm`
+
+### 4️⃣ Run
+`traffic_generator.exe and
+simulator.exe`
+
 ## Before (Problem)<br>
 * Vehicles arrive randomly from roads A, B, C, and D. <br>
 * Traffic lights operate without considering queue size. <br>
