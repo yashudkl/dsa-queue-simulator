@@ -44,6 +44,9 @@ static int prevCenterY = 900 / 2;
 
 static Color roadColor = {90, 90, 90, 255};
 static Color laneColor = {140, 140, 140, 255};
+static bool al2PriorityActive = false;
+static const int PRIORITY_ON_THRESHOLD = 10;
+static const int PRIORITY_OFF_THRESHOLD = 5;
 
 static void InitVehicles(void) {
     for (int i = 0; i < MAX_VEH; i++) vehicles[i].active = false;
@@ -87,6 +90,19 @@ static float calculateGreenDuration(void) {
     float duration = avg * TIME_PER_VEHICLE;
     if (duration < TIME_PER_VEHICLE) duration = TIME_PER_VEHICLE;
     return duration;
+}
+
+static void UpdateAl2PriorityState(void) {
+    int al2Count = LaneCount(0, 1);
+    if (!al2PriorityActive && al2Count >= PRIORITY_ON_THRESHOLD) {
+        al2PriorityActive = true;
+        currentGreen = 0;
+        phaseTimer = 0.0f;
+    } else if (al2PriorityActive && al2Count <= PRIORITY_OFF_THRESHOLD) {
+        al2PriorityActive = false;
+        phaseTimer = 0.0f;
+        currentGreenDuration = calculateGreenDuration();
+    }
 }
 
 // Deterministic rotation among controlled roads: B -> C -> D -> B ...
@@ -383,6 +399,16 @@ static void DrawLaneAlerts(void) {
     }
 }
 
+static void DrawPriorityStatus(void) {
+    const char *message = al2PriorityActive ? "Priority condition ACTIVE" : "Priority condition inactive";
+    int fontSize = 20;
+    int textWidth = MeasureText(message, fontSize);
+    int x = screenW - textWidth - 20;
+    if (x < 20) x = 20;
+    Color color = al2PriorityActive ? GREEN : DARKGRAY;
+    DrawText(message, x, 20, fontSize, color);
+}
+
 static void DrawVehicles(void) {
     for (int i = 0; i < MAX_VEH; i++) {
         if (!vehicles[i].active) continue;
@@ -390,8 +416,8 @@ static void DrawVehicles(void) {
         if (vehicles[i].lane == 2) c = LIME;
 
         // Draw vehicle as a rounded car shape instead of a square box
-        float carW = 18.0f;
-        float carL = 36.0f;
+        float carW = CAR_WID;
+        float carL = CAR_LEN;
         float px = vehicles[i].x - carW * 0.5f;
         float py = vehicles[i].y - carL * 0.5f;
         DrawRectangleRounded((Rectangle){px, py, carW, carL}, 0.35f, 6, c);
@@ -476,21 +502,29 @@ int main(void) {
         centerX = newCenterX;
         centerY = newCenterY;
 
-        // Light FSM: only one green; rotate B -> C -> D with duration based on queue average
-        phaseTimer += dt;
-        if (phaseTimer >= currentGreenDuration) {
+        // Pull new vehicles appended by traffic_generator.c so priority reacts immediately
+        PollVehicleFile();
+
+        // Refresh AL2 priority state before progressing the signal FSM
+        UpdateAl2PriorityState();
+
+        // Light FSM: honor AL2 priority, otherwise rotate through the normal cycle
+        if (al2PriorityActive) {
+            currentGreen = 0;
             phaseTimer = 0.0f;
-            currentGreen = NextControlledRoad(currentGreen);
-            currentGreenDuration = calculateGreenDuration();
+        } else {
+            phaseTimer += dt;
+            if (phaseTimer >= currentGreenDuration) {
+                phaseTimer = 0.0f;
+                currentGreen = NextControlledRoad(currentGreen);
+                currentGreenDuration = calculateGreenDuration();
+            }
         }
 
         // Decay lane saturation timers
         for (int r = 0; r < 4; r++)
             for (int l = 0; l < 3; l++)
                 if (laneSatTimer[r][l] > 0) laneSatTimer[r][l] -= dt;
-
-        // Pull new vehicles appended by traffic_generator.c
-        PollVehicleFile();
 
         UpdateVehicles(dt);
 
@@ -501,7 +535,12 @@ int main(void) {
         DrawLaneMarkers();
         DrawLaneLabels();
         DrawLaneAlerts();
-        DrawText(TextFormat("Green: %c   Phase: %.1f/%.1f", 'A'+currentGreen, phaseTimer, currentGreenDuration), 20, 20, 22, BLACK);
+        DrawPriorityStatus();
+        if (al2PriorityActive) {
+            DrawText("Green: A (AL2 priority hold)", 20, 20, 22, BLACK);
+        } else {
+            DrawText(TextFormat("Green: %c   Phase: %.1f/%.1f", 'A'+currentGreen, phaseTimer, currentGreenDuration), 20, 20, 22, BLACK);
+        }
         EndDrawing();
     }
 
