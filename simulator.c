@@ -73,10 +73,12 @@ static void GenerateVehicleNumber(char *buffer) {
 // Average queue length across controlled lanes (BL2, CL2, DL2)
 static float calculateAverageVehicles(void) {
     int sum = 0;
+    // include all four approaches' L2 (outgoing) lanes so green durations reflect overall demand
+    sum += LaneCount(0, 1); // road A, lane L2
     sum += LaneCount(1, 1); // road B, lane L2
     sum += LaneCount(2, 1); // road C, lane L2
     sum += LaneCount(3, 1); // road D, lane L2
-    return sum / 3.0f;      // n = 3 lanes
+    return sum / 4.0f;      // n = 4 lanes
 }
 
 // Green duration derived from average vehicles; clamp to at least one vehicle slot
@@ -88,12 +90,9 @@ static float calculateGreenDuration(void) {
 }
 
 // Deterministic rotation among controlled roads: B -> C -> D -> B ...
+// Deterministic rotation among controlled roads: A -> B -> C -> D -> A ...
 static int NextControlledRoad(int road) {
-    switch (road) {
-        case 1: return 2;
-        case 2: return 3;
-        default: return 1;
-    }
+    return (road + 1) % 4;
 }
 
 // Spawn a vehicle at the edge of a given road/lane
@@ -182,33 +181,94 @@ static void UpdateVehicles(float dt) {
         float gap = LeadGap(v);
         bool tooClose = gap < (CAR_LEN + MIN_HEADWAY);
 
+        // We'll operate in a unified "s" coordinate that increases along the vehicle's travel direction.
+        // This lets us compute a desired center position `desiredS` which is either the stop-line position
+        // or a position behind the leader (leaderS - spacing). Vehicles will drive toward `desiredS` and
+        // stop exactly at that point (snapping to avoid jitter). If not stopped by a light, vehicles travel
+        // at `VEH_SPEED` as before.
+        float s = 0.0f;            // center coordinate along travel axis
+        float stopLineS = 0.0f;    // stop line coordinate in s-space
+        float desiredS_stop = 0.0f; // desired center s to align front with stop line
+        float desiredS = 0.0f;
+
         switch (v->road) {
-            case 0: { // top moving down
-                bool beforeStop = v->y < centerY - stopOffset;
-                // For L2 (lane==1) we may stop before stop line when red.
-                // L1 (lane==0) and L3 (lane==2) won't be stopped by road light here.
-                v->vy = (stop && beforeStop) ? 0 : VEH_SPEED;
-                if (tooClose) v->vy = 0;
-                v->vx = 0;
-            } break;
-            case 1: { // bottom moving up
-                bool beforeStop = v->y > centerY + stopOffset;
-                v->vy = (stop && beforeStop) ? 0 : -VEH_SPEED;
-                if (tooClose) v->vy = 0;
-                v->vx = 0;
-            } break;
-            case 2: { // right moving left
-                bool beforeStop = v->x > centerX + stopOffset;
-                v->vx = (stop && beforeStop) ? 0 : -VEH_SPEED;
-                if (tooClose) v->vx = 0;
-                v->vy = 0;
-            } break;
-            case 3: { // left moving right
-                bool beforeStop = v->x < centerX - stopOffset;
-                v->vx = (stop && beforeStop) ? 0 : VEH_SPEED;
-                if (tooClose) v->vx = 0;
-                v->vy = 0;
-            } break;
+            case 0: // top -> down (y increasing)
+                s = v->y;
+                stopLineS = centerY - stopOffset;
+                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                break;
+            case 1: // bottom -> up (y decreasing)
+                s = -v->y;
+                stopLineS = -(centerY + stopOffset);
+                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                break;
+            case 2: // right -> left (x decreasing)
+                s = -v->x;
+                stopLineS = -(centerX + stopOffset);
+                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                break;
+            case 3: // left -> right (x increasing)
+                s = v->x;
+                stopLineS = centerX - stopOffset;
+                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                break;
+        }
+
+        // Default desired is the stop-line center (front aligned to stop line)
+        desiredS = desiredS_stop;
+
+        // If there's a leader, compute position behind the leader with spacing
+        if (gap < 1e8f) {
+            float leaderS = s + gap; // LeadGap returns (leaderS - myS)
+            float spacingCenter = (CAR_LEN + MIN_HEADWAY);
+            float desiredBehindLeader = leaderS - spacingCenter;
+            if (desiredBehindLeader < desiredS) desiredS = desiredBehindLeader;
+        }
+
+        // If the lane obeys the light and it's red, drive toward desiredS (or stop there).
+        // Use a tolerant check so snapped vehicles do not immediately resume and cross the intersection.
+        const float eps = 1.0f;
+        if (stop) {
+            if (tooClose) {
+                v->vx = 0; v->vy = 0;
+            } else if (s < desiredS - eps) {
+                // move forward toward the desired stop
+                switch (v->road) {
+                    case 0: v->vy = VEH_SPEED; v->vx = 0; break;
+                    case 1: v->vy = -VEH_SPEED; v->vx = 0; break;
+                    case 2: v->vx = -VEH_SPEED; v->vy = 0; break;
+                    case 3: v->vx = VEH_SPEED; v->vy = 0; break;
+                }
+            } else if (s <= desiredS + eps) {
+                // reached or slightly past desiredS: stop and snap to exact coordinate
+                v->vx = 0; v->vy = 0;
+                switch (v->road) {
+                    case 0: v->y = desiredS; break;
+                    case 1: v->y = -desiredS; break;
+                    case 2: v->x = -desiredS; break;
+                    case 3: v->x = desiredS; break;
+                }
+            } else {
+                // already past desired stop point (likely inside intersection) — allow to continue
+                switch (v->road) {
+                    case 0: v->vy = VEH_SPEED; v->vx = 0; break;
+                    case 1: v->vy = -VEH_SPEED; v->vx = 0; break;
+                    case 2: v->vx = -VEH_SPEED; v->vy = 0; break;
+                    case 3: v->vx = VEH_SPEED; v->vy = 0; break;
+                }
+            }
+        } else {
+            // Not required to stop here: normal travel, but respect car-following spacing
+            if (tooClose) {
+                v->vx = 0; v->vy = 0;
+            } else {
+                switch (v->road) {
+                    case 0: v->vy = VEH_SPEED; v->vx = 0; break;
+                    case 1: v->vy = -VEH_SPEED; v->vx = 0; break;
+                    case 2: v->vx = -VEH_SPEED; v->vy = 0; break;
+                    case 3: v->vx = VEH_SPEED; v->vy = 0; break;
+                }
+            }
         }
 
         v->x += v->vx * dt;
