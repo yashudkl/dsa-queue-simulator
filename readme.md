@@ -40,7 +40,7 @@ Simulator (raylib GUI) <br>
     -lraylib -lm -lpthread -ldl -lrt -lX11 `
 
 ### 3️⃣ Run 
-`touch vehicles.data <br>
+`touch vehicles.data 
 ./traffic_generator &
 ./simulator`
 
