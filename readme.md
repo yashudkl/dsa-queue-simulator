@@ -13,7 +13,8 @@ This project showcases how the Queue data structure (FIFO - First In First Out) 
 <br> 
 <br> 
 
-## ▶ Click to on gif watch full explanation video in youtube
+## ▶ Click to on gif watch full explanation video in youtube <br> <br>
+
 
 ## Raylib for simulation
 
