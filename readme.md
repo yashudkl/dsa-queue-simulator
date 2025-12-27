@@ -8,9 +8,9 @@ This project showcases how the Queue data structure (FIFO - First In First Out) 
 
 ## Video
 
-[![Traffic Simulation Demo](demo.gif)](https://youtu.be/VIDEO_LINK)
+[![Traffic Simulation Demo](demo.gif)](https://youtu.be/3pxFtGaizRs)
 
-▶ Click to watch full video in youtube
+## ▶ Click to on gif watch full explanation video in youtube
 
 ## Raylib for simulation
 
