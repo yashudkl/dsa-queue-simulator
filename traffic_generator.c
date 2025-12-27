@@ -70,8 +70,18 @@ static void GenerateVehicleNumber(char *buffer) {
 // Pick a road (A,B,C,D) and lane (0,1,2)
 static void PickRoadLane(char *road, int *lane) {
     const char roads[] = {'A', 'B', 'C', 'D'};
-    *road = roads[rand() % 4];
     *lane = rand() % 3;
+
+    if (*lane == 1) {
+        // Mildly favor AL2 while keeping other roads active.
+        int roll = rand() % 100;
+        if (roll < 36) *road = 'A';          // slight priority to AL2
+        else if (roll < 61) *road = 'B';     // remainder roughly even
+        else if (roll < 86) *road = 'C';
+        else *road = 'D';
+    } else {
+        *road = roads[rand() % 4];
+    }
 }
 
 // Keep only the last MAX_LINES entries in the file
