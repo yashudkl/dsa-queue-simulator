@@ -6,23 +6,15 @@ A practical implementation demonstrating the application of Queue data structure
 
 This project showcases how the Queue data structure (FIFO - First In First Out) can be effectively applied to simulate and manage traffic flow scenarios, such as vehicle queuing at intersections.
 
+## Video
+
+[![Traffic Simulation Demo](demo.gif)](https://youtu.be/VIDEO_LINK)
+
+▶ Click to watch full video in youtube
 
 ## Raylib for simulation
 
-Instead of using provided SDL2 simulation I am doing everything from scratch with raylib.
-
-### raylib vs SDL2 (Brief Comparison)
-
-SDL2 is a low-level multimedia library that provides window creation, input handling, and basic rendering. It requires more boilerplate code and additional libraries for graphics, audio, and higher-level features.
-
-raylib is a simple, beginner-friendly, and open-source C library designed for learning and rapid development. It provides built-in support for 2D/3D graphics, input handling, and audio, allowing developers to focus on core logic rather than low-level implementation details.
-
-For this project, raylib was chosen because it is more simple, open-source, and helps clearly visualize queue behavior while keeping the data-structure implementation independent of the graphics library.
-
-Reference <br>
-Website: https://www.raylib.com <br>
-GitHub: https://github.com/raysan5/raylib
-<br>
+Instead of using provided SDL2 simulation I am doing everything from scratch with raylib.It is a simple, beginner-friendly, and open-source C library designed for learning and rapid development. It provides built-in support for 2D/3D graphics, input handling, and audio, allowing developers to focus on core logic rather than low-level implementation details. For this project, raylib was chosen because it is more simple, open-source, and helps clearly visualize queue behavior while keeping the data-structure implementation independent of the graphics library.
 
 ## Traffic Queue Simulator — Installation & Running Guide
 
@@ -78,23 +70,31 @@ This causes: <br>
    * Long waiting times <br>
    * Unfair vehicle dispatch <br>
    * Traffic congestion at busy roads <br>
-   
-<img width="599" height="452" alt="{3C76168F-4A97-4043-BD08-3C940AF7EDF2}" src="https://github.com/user-attachments/assets/0b479d0b-a73e-42a4-b7ec-66112f3c4418" />
-<br>
-<br>
-Here red AUD at top left shows that lane has crossed 10 or more than 10 vehicles
-<br>
+  <br>
+  <br>
+
 
 ## After (Solution) <br>
 * AL2 is served immediately when congested
 * Waiting time in AL2 is reduced
 * Normal lanes are served fairly
 * System performance improves partially
+
 <br>
-<img width="594" height="468" alt="image" src="https://github.com/user-attachments/assets/f73a8d88-58a8-4b89-9551-e0506620dde6" />
 <br>
-<br>
-Here AUD at top right shows that priotiry condition is active and vehicles in lane AL2 is given priority in saturation 
+
+## References
+### Raylib Documentation
+### Official Documentation:
+
+Raylib API Reference: https://www.raylib.com/cheatsheet/cheatsheet.html <br>
+Raylib Examples: https://www.raylib.com/examples.html <br>
+GitHub Repository: https://github.com/raysan5/raylib <br> 
+
+### Tutorials:
+
+Getting Started Guide: https://github.com/raysan5/raylib/wiki/Working-on-Windows <br>
+Raylib Beginner Video Series: https://www.youtube.com/playlist?list=PL5gRzHmN4Dg3ubcneVFkHJnLd-Yj_LPWP <br> 
 
 #### Note: The system improves traffic flow using a single priority lane, but does not fully optimize congestion for all lanes.
 
