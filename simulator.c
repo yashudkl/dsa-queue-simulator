@@ -32,6 +32,31 @@ static const float MIN_HEADWAY = 24.0f;  // min gap to avoid overlap
 static const int MAX_SPAWNS_PER_TICK = 16; // allow faster buildup for saturation
 static float laneSatTimer[4][3] = {0};    // saturation alert timers per lane
 
+static void SetLaneSpeed(Vehicle *v, float speed) {
+    switch (v->road) {
+        case 0: // road A travels vertically
+            v->vx = 0;
+            v->vy = (v->lane == 0) ? -speed : speed;
+            break;
+        case 1: // road B vertical but inverted direction
+            v->vx = 0;
+            v->vy = (v->lane == 0) ? speed : -speed;
+            break;
+        case 2: // road C horizontal
+            v->vy = 0;
+            v->vx = (v->lane == 0) ? speed : -speed;
+            break;
+        case 3: // road D horizontal inverted
+            v->vy = 0;
+            v->vx = (v->lane == 0) ? -speed : speed;
+            break;
+        default:
+            v->vx = 0;
+            v->vy = 0;
+            break;
+    }
+}
+
 // Layout constants
 static int screenW = 1200;
 static int screenH = 900;
@@ -47,6 +72,17 @@ static Color laneColor = {140, 140, 140, 255};
 static bool al2PriorityActive = false;
 static const int PRIORITY_ON_THRESHOLD = 10;
 static const int PRIORITY_OFF_THRESHOLD = 5;
+
+static float LaneLateralOffset(int road, int lane) {
+    static const int slotMap[4][3] = {
+        {0, 1, 2},
+        {2, 1, 0},
+        {0, 1, 2},
+        {2, 1, 0}
+    };
+    int slot = slotMap[road & 3][lane];
+    return -roadWidth / 2.0f + laneWidth * slot + laneWidth * 0.5f;
+}
 
 static void InitVehicles(void) {
     for (int i = 0; i < MAX_VEH; i++) vehicles[i].active = false;
@@ -122,28 +158,26 @@ static void SpawnVehicle(int road, int lane, const char *plateOpt) {
             else GenerateVehicleNumber(vehicles[i].plate);
             vehicles[i].plate[sizeof(vehicles[i].plate)-1] = '\0';
 
+            float lateral = LaneLateralOffset(road, lane);
             switch (road) {
                 case 0: // A from top downward
-                    vehicles[i].x = centerX - roadWidth/2 + laneWidth * lane + laneWidth/2;
+                    vehicles[i].x = centerX + lateral;
                     vehicles[i].y = -40;
-                    vehicles[i].vx = 0; vehicles[i].vy = 120;
                     break;
                 case 1: // B from bottom upward
-                    vehicles[i].x = centerX + roadWidth/2 - laneWidth * lane - laneWidth/2;
+                    vehicles[i].x = centerX + lateral;
                     vehicles[i].y = screenH + 40;
-                    vehicles[i].vx = 0; vehicles[i].vy = -120;
                     break;
                 case 2: // C from right leftward
                     vehicles[i].x = screenW + 40;
-                    vehicles[i].y = centerY + roadWidth/2 - laneWidth * lane - laneWidth/2;
-                    vehicles[i].vx = -120; vehicles[i].vy = 0;
+                    vehicles[i].y = centerY + lateral;
                     break;
                 case 3: // D from left rightward
                     vehicles[i].x = -40;
-                    vehicles[i].y = centerY - roadWidth/2 + laneWidth * lane + laneWidth/2;
-                    vehicles[i].vx = 120; vehicles[i].vy = 0;
+                    vehicles[i].y = centerY + lateral;
                     break;
             }
+            SetLaneSpeed(&vehicles[i], 120.0f);
             break;
         }
     }
@@ -164,6 +198,16 @@ static bool ShouldStop(const Vehicle *v) {
     return false;
 }
 
+static float LaneTravelCoordinate(const Vehicle *v) {
+    switch (v->road) {
+        case 0: return (v->lane == 0) ? -v->y : v->y;
+        case 1: return (v->lane == 0) ? v->y : -v->y;
+        case 2: return (v->lane == 0) ? v->x : -v->x;
+        case 3: return (v->lane == 0) ? -v->x : v->x;
+        default: return 0.0f;
+    }
+}
+
 // Get lead vehicle distance along travel axis for simple car-following spacing
 static float LeadGap(const Vehicle *self) {
     float best = 1e9f;
@@ -172,133 +216,172 @@ static float LeadGap(const Vehicle *self) {
         if (!o->active || o == self) continue;
         if (o->road != self->road || o->lane != self->lane) continue;
 
-        // Project positions along travel axis depending on road
-        float myS = 0, otherS = 0;
-        switch (self->road) {
-            case 0: myS = self->y; otherS = o->y; break;           // increasing y
-            case 1: myS = -self->y; otherS = -o->y; break;         // decreasing y
-            case 2: myS = -self->x; otherS = -o->x; break;         // decreasing x
-            case 3: myS = self->x; otherS = o->x; break;           // increasing x
-        }
+        float myS = LaneTravelCoordinate(self);
+        float otherS = LaneTravelCoordinate(o);
         if (otherS > myS && (otherS - myS) < best) best = otherS - myS;
     }
     return best;
 }
 
+static int RoadLeft(int road) {
+    static const int map[4] = {3, 2, 0, 1};
+    return map[road & 3];
+}
+
+static int RoadRight(int road) {
+    static const int map[4] = {2, 3, 1, 0};
+    return map[road & 3];
+}
+
+static int RoadOpposite(int road) {
+    static const int map[4] = {1, 0, 3, 2};
+    return map[road & 3];
+}
+
+static Vector2 Lane0SpawnPoint(int road) {
+    Vector2 pos = {(float)centerX, (float)centerY};
+    const float exitOffset = CAR_LEN;
+    float lateral = LaneLateralOffset(road, 0);
+    switch (road) {
+        case 0: // A incoming moves upward
+            pos.x = centerX + lateral;
+            pos.y = centerY - roadWidth/2 - exitOffset;
+            break;
+        case 1: // B incoming moves downward
+            pos.x = centerX + lateral;
+            pos.y = centerY + roadWidth/2 + exitOffset;
+            break;
+        case 2: // C incoming moves rightward
+            pos.x = centerX + roadWidth/2 + exitOffset;
+            pos.y = centerY + lateral;
+            break;
+        case 3: // D incoming moves leftward
+            pos.x = centerX - roadWidth/2 - exitOffset;
+            pos.y = centerY + lateral;
+            break;
+        default:
+            break;
+    }
+    return pos;
+}
+
+static void TransitionVehicleThroughIntersection(Vehicle *v) {
+    int originRoad = v->road;
+    int originLane = v->lane;
+
+    int destRoad = originRoad;
+    if (originLane == 2) {
+        destRoad = RoadLeft(originRoad);
+    } else {
+        destRoad = (GetRandomValue(0, 1) == 0) ? RoadOpposite(originRoad) : RoadRight(originRoad);
+    }
+
+    v->road = destRoad;
+    v->lane = 0;
+    Vector2 pos = Lane0SpawnPoint(destRoad);
+    v->x = pos.x;
+    v->y = pos.y;
+    SetLaneSpeed(v, VEH_SPEED);
+}
+
 static void UpdateVehicles(float dt) {
     float stopOffset = roadWidth / 2.0f + 15.0f; // stop line distance to center
+    float boxMinX = centerX - roadWidth / 2.0f;
+    float boxMaxX = centerX + roadWidth / 2.0f;
+    float boxMinY = centerY - roadWidth / 2.0f;
+    float boxMaxY = centerY + roadWidth / 2.0f;
     for (int i = 0; i < MAX_VEH; i++) {
         Vehicle *v = &vehicles[i];
         if (!v->active) continue;
 
-        bool stop = ShouldStop(v);
+        bool approachLane = (v->lane != 0);
+        bool stop = approachLane && ShouldStop(v);
 
         // car-following headway check (do not run into the vehicle ahead)
         float gap = LeadGap(v);
         bool tooClose = gap < (CAR_LEN + MIN_HEADWAY);
 
-        // We'll operate in a unified "s" coordinate that increases along the vehicle's travel direction.
-        // This lets us compute a desired center position `desiredS` which is either the stop-line position
-        // or a position behind the leader (leaderS - spacing). Vehicles will drive toward `desiredS` and
-        // stop exactly at that point (snapping to avoid jitter). If not stopped by a light, vehicles travel
-        // at `VEH_SPEED` as before.
-        float s = 0.0f;            // center coordinate along travel axis
-        float stopLineS = 0.0f;    // stop line coordinate in s-space
-        float desiredS_stop = 0.0f; // desired center s to align front with stop line
-        float desiredS = 0.0f;
+        if (approachLane) {
+            float s = 0.0f;
+            float stopLineS = 0.0f;
+            float desiredS_stop = 0.0f;
+            float desiredS = 0.0f;
 
-        switch (v->road) {
-            case 0: // top -> down (y increasing)
-                s = v->y;
-                stopLineS = centerY - stopOffset;
-                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
-                break;
-            case 1: // bottom -> up (y decreasing)
-                s = -v->y;
-                stopLineS = -(centerY + stopOffset);
-                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
-                break;
-            case 2: // right -> left (x decreasing)
-                s = -v->x;
-                stopLineS = -(centerX + stopOffset);
-                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
-                break;
-            case 3: // left -> right (x increasing)
-                s = v->x;
-                stopLineS = centerX - stopOffset;
-                desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
-                break;
-        }
+            switch (v->road) {
+                case 0: // top -> down (y increasing)
+                    s = v->y;
+                    stopLineS = centerY - stopOffset;
+                    desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                    break;
+                case 1: // bottom -> up (y decreasing)
+                    s = -v->y;
+                    stopLineS = -(centerY + stopOffset);
+                    desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                    break;
+                case 2: // right -> left (x decreasing)
+                    s = -v->x;
+                    stopLineS = -(centerX + stopOffset);
+                    desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                    break;
+                case 3: // left -> right (x increasing)
+                    s = v->x;
+                    stopLineS = centerX - stopOffset;
+                    desiredS_stop = stopLineS - (CAR_LEN * 0.5f);
+                    break;
+            }
 
-        // Default desired is the stop-line center (front aligned to stop line)
-        desiredS = desiredS_stop;
+            desiredS = desiredS_stop;
+            if (gap < 1e8f) {
+                float leaderS = s + gap;
+                float spacingCenter = (CAR_LEN + MIN_HEADWAY);
+                float desiredBehindLeader = leaderS - spacingCenter;
+                if (desiredBehindLeader < desiredS) desiredS = desiredBehindLeader;
+            }
 
-        // If there's a leader, compute position behind the leader with spacing
-        if (gap < 1e8f) {
-            float leaderS = s + gap; // LeadGap returns (leaderS - myS)
-            float spacingCenter = (CAR_LEN + MIN_HEADWAY);
-            float desiredBehindLeader = leaderS - spacingCenter;
-            if (desiredBehindLeader < desiredS) desiredS = desiredBehindLeader;
-        }
-
-        // If the lane obeys the light and it's red, drive toward desiredS (or stop there).
-        // Use a tolerant check so snapped vehicles do not immediately resume and cross the intersection.
-        const float eps = 1.0f;
-        if (stop) {
-            if (tooClose) {
-                v->vx = 0; v->vy = 0;
-            } else if (s < desiredS - eps) {
-                // move forward toward the desired stop
-                switch (v->road) {
-                    case 0: v->vy = VEH_SPEED; v->vx = 0; break;
-                    case 1: v->vy = -VEH_SPEED; v->vx = 0; break;
-                    case 2: v->vx = -VEH_SPEED; v->vy = 0; break;
-                    case 3: v->vx = VEH_SPEED; v->vy = 0; break;
-                }
-            } else if (s <= desiredS + eps) {
-                // reached or slightly past desiredS: stop and snap to exact coordinate
-                v->vx = 0; v->vy = 0;
-                switch (v->road) {
-                    case 0: v->y = desiredS; break;
-                    case 1: v->y = -desiredS; break;
-                    case 2: v->x = -desiredS; break;
-                    case 3: v->x = desiredS; break;
+            const float eps = 1.0f;
+            if (stop) {
+                if (tooClose) {
+                    v->vx = 0;
+                    v->vy = 0;
+                } else if (s < desiredS - eps) {
+                    SetLaneSpeed(v, VEH_SPEED);
+                } else if (s <= desiredS + eps) {
+                    v->vx = 0;
+                    v->vy = 0;
+                    switch (v->road) {
+                        case 0: v->y = desiredS; break;
+                        case 1: v->y = -desiredS; break;
+                        case 2: v->x = -desiredS; break;
+                        case 3: v->x = desiredS; break;
+                    }
+                } else {
+                    SetLaneSpeed(v, VEH_SPEED);
                 }
             } else {
-                // already past desired stop point (likely inside intersection) — allow to continue
-                switch (v->road) {
-                    case 0: v->vy = VEH_SPEED; v->vx = 0; break;
-                    case 1: v->vy = -VEH_SPEED; v->vx = 0; break;
-                    case 2: v->vx = -VEH_SPEED; v->vy = 0; break;
-                    case 3: v->vx = VEH_SPEED; v->vy = 0; break;
+                if (tooClose) {
+                    v->vx = 0;
+                    v->vy = 0;
+                } else {
+                    SetLaneSpeed(v, VEH_SPEED);
                 }
             }
         } else {
-            // Not required to stop here: normal travel, but respect car-following spacing
             if (tooClose) {
-                v->vx = 0; v->vy = 0;
+                v->vx = 0;
+                v->vy = 0;
             } else {
-                switch (v->road) {
-                    case 0: v->vy = VEH_SPEED; v->vx = 0; break;
-                    case 1: v->vy = -VEH_SPEED; v->vx = 0; break;
-                    case 2: v->vx = -VEH_SPEED; v->vy = 0; break;
-                    case 3: v->vx = VEH_SPEED; v->vy = 0; break;
-                }
+                SetLaneSpeed(v, VEH_SPEED);
             }
         }
 
         v->x += v->vx * dt;
         v->y += v->vy * dt;
 
-        // Despawn when inside the intersection box to avoid mid-cross collisions
-        float bx = centerX - roadWidth/2;
-        float by = centerY - roadWidth/2;
-        if (v->x > bx && v->x < bx + roadWidth && v->y > by && v->y < by + roadWidth) {
-            v->active = false;
+        if (approachLane && v->x > boxMinX && v->x < boxMaxX && v->y > boxMinY && v->y < boxMaxY) {
+            TransitionVehicleThroughIntersection(v);
             continue;
         }
 
-        // Despawn when off screen
         if (v->x < -200 || v->x > screenW + 200 || v->y < -200 || v->y > screenH + 200) {
             v->active = false;
         }
@@ -332,31 +415,31 @@ static void DrawLaneMarkers(void) {
     int gap = 6;
 
     // Road A (top), lanes stacked horizontally across road width
-    for (int i = 0; i < 3; i++) {
-        int lx = centerX - roadWidth/2 + laneWidth * i + laneWidth/2 - 10;
+    for (int lane = 0; lane < 3; lane++) {
+        int lx = centerX + (int)LaneLateralOffset(0, lane) - 10;
         int ly = centerY - roadWidth/2 - 40;
-        DrawText(laneNames[i], lx, ly, textSize, BLACK);
+        DrawText(laneNames[lane], lx, ly, textSize, BLACK);
     }
 
     // Road B (bottom)
-    for (int i = 0; i < 3; i++) {
-        int lx = centerX + roadWidth/2 - laneWidth * i - laneWidth/2 - 10;
+    for (int lane = 0; lane < 3; lane++) {
+        int lx = centerX + (int)LaneLateralOffset(1, lane) - 10;
         int ly = centerY + roadWidth/2 + 20;
-        DrawText(laneNames[i], lx, ly, textSize, BLACK);
+        DrawText(laneNames[lane], lx, ly, textSize, BLACK);
     }
 
     // Road C (right)
-    for (int i = 0; i < 3; i++) {
+    for (int lane = 0; lane < 3; lane++) {
         int lx = centerX + roadWidth/2 + 20;
-        int ly = centerY + roadWidth/2 - laneWidth * i - laneWidth/2 - textSize - gap;
-        DrawText(laneNames[i], lx, ly, textSize, BLACK);
+        int ly = centerY + (int)LaneLateralOffset(2, lane) - textSize - gap;
+        DrawText(laneNames[lane], lx, ly, textSize, BLACK);
     }
 
     // Road D (left)
-    for (int i = 0; i < 3; i++) {
+    for (int lane = 0; lane < 3; lane++) {
         int lx = centerX - roadWidth/2 - 40;
-        int ly = centerY - roadWidth/2 + laneWidth * i + laneWidth/2 - textSize;
-        DrawText(laneNames[i], lx, ly, textSize, BLACK);
+        int ly = centerY + (int)LaneLateralOffset(3, lane) - textSize;
+        DrawText(laneNames[lane], lx, ly, textSize, BLACK);
     }
 }
 
@@ -452,6 +535,7 @@ static void PollVehicleFile(void) {
             case 'D': road = 3; break;
         }
         if (road < 0 || lane < 0 || lane > 2) continue;
+        if (lane == 0) continue; // lane 0 vehicles now only enter via intersection transitions
         int before = LaneCount(road, lane);
         if (before >= 10) laneSatTimer[road][lane] = 3.0f; // already saturated
 
