@@ -14,7 +14,7 @@ typedef struct {
     int road;
     int lane;
     bool active;
-    char plate[10];
+    char plate[16];
 } Vehicle;
 
 #define MAX_VEH 64
@@ -154,7 +154,7 @@ static void SpawnVehicle(int road, int lane, const char *plateOpt) {
             vehicles[i].active = true;
             vehicles[i].road = road;
             vehicles[i].lane = lane;
-            if (plateOpt) strncpy(vehicles[i].plate, plateOpt, sizeof(vehicles[i].plate)-1);
+            if (plateOpt) strncpy(vehicles[i].plate, plateOpt, sizeof(vehicles[i].plate));
             else GenerateVehicleNumber(vehicles[i].plate);
             vehicles[i].plate[sizeof(vehicles[i].plate)-1] = '\0';
 
