@@ -6,24 +6,219 @@ A practical implementation demonstrating the application of Queue data structure
 
 This project showcases how the Queue data structure (FIFO - First In First Out) can be effectively applied to simulate and manage traffic flow scenarios, such as vehicle queuing at intersections.
 
+## Demo 
+[![Traffic Simulation Demo](demo.gif)](https://youtu.be/3pxFtGaizRs)
 
-## Raylib for simulation
+<br> 
+<br> 
 
-Instead of using provided SDL2 simulation I am doing everything from scratch with raylib.
+**▶ Click on gif or click the link below to watch full explanation video in youtube**<br> 
+https://youtu.be/3pxFtGaizRs <br> <br>
 
-### raylib vs SDL2 (Brief Comparison)
 
-SDL2 is a low-level multimedia library that provides window creation, input handling, and basic rendering. It requires more boilerplate code and additional libraries for graphics, audio, and higher-level features.
+## Before (Problem)<br>
+* All lanes are treated equally, even if some have huge number of vehicles <br>
+* Priority lane (AL2) is not recognized.<br>
+This causes: <br>
+   * Long waiting times in a particular lane <br>
+   * Unfair vehicle distribution at the junction <br>
+   * Vehicle saturation at busy roads <br>
+   
+## After (Solution) <br>
+* AL2 is served immediately when there is more than or equals to ten vehicles.
+* Waiting time in AL2 is reduced.
+* Al2 is normal if there are less than equals to 5 vehicles.
+* System performance improves partially.
 
-raylib is a simple, beginner-friendly, and open-source C library designed for learning and rapid development. It provides built-in support for 2D/3D graphics, input handling, and audio, allowing developers to focus on core logic rather than low-level implementation details.
 
-For this project, raylib was chosen because it is more simple, open-source, and helps clearly visualize queue behavior while keeping the data-structure implementation independent of the graphics library.
+## Summary of Work
 
-Reference <br>
-Website: https://www.raylib.com <br>
-GitHub: https://github.com/raysan5/raylib
+The given assignment was to implement a queue data structure to solve a real-life traffic management problem.  
+The most challenging part of the assignment was implementing the simulation.
+
+After doing some research, I found a popular lightweight C graphics library called **Raylib**. It is open source and was developed by a programmer named *Ray*, mainly for game development. Compared to **SDL2** (which was originally suggested), Raylib proved to be simpler and more effective for this project.
+
+Although the graphical interface is simple, the queue logic is not affected. Vehicles are made to disappear after crossing the intersection to avoid additional GUI complexity.
+
+
+### Vehicle Serving Logic
+
+Vehicles are served based on the **average number of vehicles waiting** in normal lanes:
+
+|V| = (1 / n) × Σ |Lᵢ|
+
+Where:
+- `n` = Total number of lanes (3 → BL2, CL3, DL4)
+- `|Lᵢ|` = Number of vehicles waiting in the *i-th* lane
+- `|V|` = Number of vehicles served at once
+
+Since it is difficult to count the exact number of vehicles passing through the junction, the system estimates the required green light time using:
+
+Green Light Time = |V| × t
+
+Where:
+- `t` = Estimated time required for one vehicle to pass
+
+
+### Priority Lane Handling
+
+When the number of vehicles in a lane exceeds **10**, the lane is considered saturated.
+
+In this program, **AL2** is defined as the priority lane:
+
+- If vehicles in **AL2 ≥ 10**, it is served immediately
+- Once vehicles drop to **≤ 5**, AL2 is treated as a normal lane again
+
+This approach reduces congestion in the priority lane while maintaining fair service for other lanes.<br>
+<br>
+## Table: Data Structures Used
+
+| Data Structure     | Implementation                                                                                 | Purpose                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Array (Static)** | `Vehicle vehicles[MAX_VEH]`  <br> Fixed-size array of 64 vehicle structs                       | Vehicle pool management – stores all active and inactive vehicles in the simulation                            |
+| **Explicit Queue** | `LaneQueue laneQueues[4][3]`  <br> 4 roads × 3 lanes                                           | Models traffic lanes as FIFO queues: vehicles are enqueued at tail (spawn) and dequeued at head (intersection) |
+| **Priority Flag**  | `al2PriorityActive` + threshold logic (`PRIORITY_ON_THRESHOLD`, `PRIORITY_OFF_THRESHOLD`)      | Implements AL2 lane priority – green light forced for AL2 lane when vehicle count ≥ 10                         |
+| **Struct**         | `typedef struct { float x, y, vx, vy; int road, lane; bool active; char plate[16]; } Vehicle;` | Encapsulates vehicle state including position, velocity, lane assignment, and plate ID                         |
+| **2D Array**       | `float laneSatTimer[4][3]`                                                                     | Tracks saturation alerts for each lane to display warnings when queue length ≥ 10                              |
+
 <br>
 
+## Functions Using Data Structures
+
+### Queue-Related Functions
+
+#### 1. SpawnVehicle(int road, int lane, const char *plateOpt)
+- **Operation:** Enqueue  
+- **Purpose:** Adds a vehicle to the tail of the lane queue  
+- **Data Structure:** `vehicles[]` array  
+
+#### 2. LaneCount(int road, int lane)
+- **Operation:** Queue length query  
+- **Purpose:** Counts the number of vehicles in a specific lane  
+- **Data Structure:** Iterates through `vehicles[]`  
+
+#### 3. TransitionVehicleThroughIntersection(Vehicle *v)
+- **Operation:** Dequeue + Enqueue  
+- **Purpose:** Transfers a vehicle from the current lane to the destination lane  
+- **Data Structure:** Updates vehicle road and lane fields  
+
+#### 4. calculateAverageVehicles(void)
+- **Operation:** Multi-queue aggregation  
+- **Purpose:** Computes the average number of vehicles across normal lanes  
+- **Formula:**
+(AL2 + BL2 + CL2 + DL2) / 4
+
+
+#### 5. calculateGreenDuration(void)
+- **Operation:** Queue-based scheduling  
+- **Purpose:** Determines traffic light green duration  
+- **Formula:**
+duration = avg_vehicles × TIME_PER_VEHICLE (minimum 0.8s)
+
+
+#### 6. UpdateAl2PriorityState(void)
+- **Operation:** Priority threshold check  
+- **Purpose:** Enables or disables priority servicing for AL2  
+
+#### 7. LeadGap(const Vehicle *self)
+- **Operation:** Queue front detection  
+- **Purpose:** Maintains safe spacing between vehicles  
+
+#### 8. ShouldStop(const Vehicle *v)
+- **Operation:** Queue discipline enforcement  
+- **Purpose:** Enforces traffic rules based on lane type and signal state  
+
+
+
+### Supporting Functions
+
+#### 9. PollVehicleFile(void)
+- Reads external vehicle data  
+- Enqueues vehicles into the simulation  
+
+#### 10. UpdateVehicles(float dt)
+- Updates vehicle positions  
+- Enforces queue discipline and spacing rules  
+
+#### 11. InitVehicles(void)
+- Initializes the vehicle pool  
+- Marks all vehicles as inactive  
+
+---
+
+## Main Algorithm (`simulator.c`)
+
+### Initialization
+- All vehicles are set to inactive  
+- `currentGreen = Road B`  
+- `phaseTimer = 0`  
+- `greenDuration = 0.8s`  
+
+
+
+### Main Loop (60 FPS)
+
+#### STEP 1: Read New Vehicles
+- Read up to 16 entries from `vehicles.data`  
+- Parse format: `PLATE : ROAD : LANE`  
+- Skip incoming-only lanes  
+- Enqueue vehicles  
+- Detect saturation (queue length ≥ 10)  
+
+#### STEP 2: Priority Condition Check
+- If `AL2 ≥ 10` → force green light to Road A  
+- If priority active and `AL2 ≤ 5` → disable priority mode  
+
+#### STEP 3: Traffic Light Control
+- If priority active → keep Road A green  
+- Else:
+- Increment phase timer  
+- Compute average queue length  
+- Update green duration  
+- Rotate green light: `A → B → C → D → A`  
+
+#### STEP 4: Vehicle Movement
+- L2 lanes obey traffic lights  
+- L3 lanes allow free left turns  
+- L1 incoming lanes never stop  
+- Maintain spacing ≥ 60 px  
+- Move vehicles at 80 px/s  
+- Transition vehicles through intersection  
+- Deactivate vehicles when off-screen  
+
+#### STEP 5: Rendering
+- Draw roads  
+- Draw traffic lights  
+- Draw vehicles  
+- Draw alerts and HUD
+
+## Time Complexity of Algorithm
+
+| Function                   | Complexity | Reason                     |
+| -------------------------- | ---------- | -------------------------- |
+| LaneCount()                | O(n)       | Loops through all 64 vehicles to count matches |
+| calculateAverageVehicles() | O(n)       | Calls LaneCount() 4 times: 4×n = O(n)          |
+| UpdateAl2PriorityState()   | O(n)       | Calls LaneCount() once          |
+| LeadGap()                  | O(n)       | Loops through all 64 vehicles to find leader           |
+| SpawnVehicle()             | O(n)       | Searches for first inactive slot (worst case 64 checks)     |
+| UpdateVehicles()           | **O(n²)**  | Nested: loops 64 vehicles, each calls LeadGap (64 checks)      |
+
+Why O(n²)?
+
+UpdateVehicles() {
+    for (i = 0; i < 64; i++) {
+        gap = LeadGap(vehicle[i]);
+    }
+}
+
+
+Outer loop → n
+
+Inner loop → n
+
+Total operations → n × n
+
+**Therefore, the dominant time complexity of the algorithm is: O(n²)**
 ## Traffic Queue Simulator — Installation & Running Guide
 
 ### 🐧 Arch Linux — Build & Run
@@ -68,36 +263,18 @@ Simulator
 `traffic_generator.exe and
 simulator.exe`
 
-## Before (Problem)<br>
-* Vehicles arrive randomly from roads A, B, C, and D. <br>
-* Traffic lights operate without considering queue size. <br>
-* All lanes are treated equally, even if some are heavily congested. <br>
-* Priority lane (AL2) is not recognized as special. <br>
-* Green light duration is fixed, not based on number of vehicles. <br>
-This causes: <br>
-   * Long waiting times <br>
-   * Unfair vehicle dispatch <br>
-   * Traffic congestion at busy roads <br>
-   
-<img width="599" height="452" alt="{3C76168F-4A97-4043-BD08-3C940AF7EDF2}" src="https://github.com/user-attachments/assets/0b479d0b-a73e-42a4-b7ec-66112f3c4418" />
-<br>
-<br>
-Here red AUD at top left shows that lane has crossed 10 or more than 10 vehicles
-<br>
+## References
+### Raylib Documentation
 
-## After (Solution) <br>
-* AL2 is served immediately when congested
-* Waiting time in AL2 is reduced
-* Normal lanes are served fairly
-* System performance improves partially
-<br>
-<img width="594" height="468" alt="image" src="https://github.com/user-attachments/assets/f73a8d88-58a8-4b89-9551-e0506620dde6" />
-<br>
-<br>
-Here AUD at top right shows that priotiry condition is active and vehicles in lane AL2 is given priority in saturation 
+Raylib API Reference: https://www.raylib.com/cheatsheet/cheatsheet.html <br>
+Raylib Examples: https://www.raylib.com/examples.html <br>
+GitHub Repository: https://github.com/raysan5/raylib <br> 
 
-#### Note: The system improves traffic flow using a single priority lane, but does not fully optimize congestion for all lanes.
+### Tutorials:
 
+Getting Started With Raylib Guide: https://github.com/raysan5/raylib/wiki/Working-on-Windows <br>
+Raylib Beginner Video Series: https://www.youtube.com/playlist?list=PL5gRzHmN4Dg3ubcneVFkHJnLd-Yj_LPWP <br> 
+File Handling in C: https://www.youtube.com/watch?v=qg69AXmHhx8 <br>
+Similar Traffic Simulation Project: https://www.youtube.com/watch?v=rIrViyBiS7E <br>
 
-
-
+#### Note: The system improves saturation in only a single priority lane in real world scenariors it can be modified to make complex systems to get efficient flow of vehicles.

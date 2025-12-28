@@ -1,187 +1,171 @@
-// Build (MSYS2 MinGW64 example):
+// Build (MSYS2 MinGW64 example): 
 // gcc simulator.c -o simulator.exe -lraylib -lopengl32 -lgdi32 -lwinmm
 
 #include "raylib.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
-// Roads: 0=A (top), 1=B (bottom), 2=C (right), 3=D (left)
-// Lanes per road: 0 = L1 incoming, 1 = L2 outgoing (obeys light), 2 = L3 free left-turn
+// =======================
+// Vehicle structure
+// =======================
 typedef struct {
-    float x, y;
-    float vx, vy;
-    int road;
-    int lane;
-    bool active;
-    char plate[16];
+    float x, y;       // position
+    float vx, vy;     // velocity
+    int road;         // road: 0=A,1=B,2=C,3=D
+    int lane;         // lane index: 0=L1,1=L2,2=L3
+    bool active;      // is vehicle active
+    char plate[16];   // vehicle plate
 } Vehicle;
 
 #define MAX_VEH 64
-
 static Vehicle vehicles[MAX_VEH];
-static int currentGreen = 1;          // only this road is green (state 2), others red (state 1); start with road B
-static float phaseTimer = 0.0f;       // tracks elapsed time in current green phase
-static float currentGreenDuration = 0.0f; // duration for current green phase, computed from lane averages
-static const float TIME_PER_VEHICLE = 0.8f; // T = constant time per vehicle (seconds)
-static long vehiclesFilePos = 0;
-static const float VEH_SPEED = 80.0f;   // slower base speed
-static const float CAR_LEN = 36.0f;      // vehicle length for spacing
-static const float CAR_WID = 18.0f;      // vehicle width for drawing
-static const float MIN_HEADWAY = 24.0f;  // min gap to avoid overlap
-static const int MAX_SPAWNS_PER_TICK = 16; // allow faster buildup for saturation
-static float laneSatTimer[4][3] = {0};    // saturation alert timers per lane
 
-static void SetLaneSpeed(Vehicle *v, float speed) {
-    switch (v->road) {
-        case 0: // road A travels vertically
-            v->vx = 0;
-            v->vy = (v->lane == 0) ? -speed : speed;
-            break;
-        case 1: // road B vertical but inverted direction
-            v->vx = 0;
-            v->vy = (v->lane == 0) ? speed : -speed;
-            break;
-        case 2: // road C horizontal
-            v->vy = 0;
-            v->vx = (v->lane == 0) ? speed : -speed;
-            break;
-        case 3: // road D horizontal inverted
-            v->vy = 0;
-            v->vx = (v->lane == 0) ? -speed : speed;
-            break;
-        default:
-            v->vx = 0;
-            v->vy = 0;
-            break;
-    }
+
+// Queue for each lane
+
+typedef struct {
+    int indices[MAX_VEH];
+    int front;
+    int rear;
+    int count;
+} LaneQueue;
+
+static LaneQueue laneQueues[4][3]; // 4 roads × 3 lanes
+
+// Initialize queues
+static void InitQueues(void) {
+    for (int r = 0; r < 4; r++)
+        for (int l = 0; l < 3; l++) {
+            laneQueues[r][l].front = 0;
+            laneQueues[r][l].rear = -1;
+            laneQueues[r][l].count = 0;
+        }
 }
 
-// Layout constants
+// Enqueue vehicle index into lane queue
+static void Enqueue(LaneQueue *q, int vehIndex) {
+    if (q->count >= MAX_VEH) return; // safety
+    q->rear = (q->rear + 1) % MAX_VEH;
+    q->indices[q->rear] = vehIndex;
+    q->count++;
+}
+
+// Dequeue vehicle index from lane queue
+static int Dequeue(LaneQueue *q) {
+    if (q->count <= 0) return -1;
+    int idx = q->indices[q->front];
+    q->front = (q->front + 1) % MAX_VEH;
+    q->count--;
+    return idx;
+}
+
+// =======================
+// Simulation variables
+// =======================
+static int currentGreen = 1;          
+static float phaseTimer = 0.0f;       
+static float currentGreenDuration = 0.0f;
+static const float TIME_PER_VEHICLE = 0.8f;
+static long vehiclesFilePos = 0;
+static const float VEH_SPEED = 80.0f;
+static const float CAR_LEN = 36.0f;
+static const float CAR_WID = 18.0f;
+static const float MIN_HEADWAY = 24.0f;
+static const int MAX_SPAWNS_PER_TICK = 16;
+static float laneSatTimer[4][3] = {0};
+static bool al2PriorityActive = false;
+static const int PRIORITY_ON_THRESHOLD = 10;
+static const int PRIORITY_OFF_THRESHOLD = 5;
+
+// =======================
+// Layout
+// =======================
 static int screenW = 1200;
 static int screenH = 900;
 static const int roadWidth = 180;
 static const int laneWidth = 60;
 static int centerX = 1200 / 2;
 static int centerY = 900 / 2;
-static int prevCenterX = 1200 / 2;
-static int prevCenterY = 900 / 2;
 
 static Color roadColor = {90, 90, 90, 255};
 static Color laneColor = {140, 140, 140, 255};
-static bool al2PriorityActive = false;
-static const int PRIORITY_ON_THRESHOLD = 10;
-static const int PRIORITY_OFF_THRESHOLD = 5;
+
+
+// Utility functions
 
 static float LaneLateralOffset(int road, int lane) {
     static const int slotMap[4][3] = {
-        {0, 1, 2},
-        {2, 1, 0},
-        {0, 1, 2},
-        {2, 1, 0}
+        {0,1,2}, {2,1,0}, {0,1,2}, {2,1,0}
     };
     int slot = slotMap[road & 3][lane];
-    return -roadWidth / 2.0f + laneWidth * slot + laneWidth * 0.5f;
+    return -roadWidth/2.0f + laneWidth*slot + laneWidth*0.5f;
+}
+
+static void SetLaneSpeed(Vehicle *v, float speed) {
+    switch (v->road) {
+        case 0: v->vx=0; v->vy=(v->lane==0)?-speed:speed; break;
+        case 1: v->vx=0; v->vy=(v->lane==0)?speed:-speed; break;
+        case 2: v->vy=0; v->vx=(v->lane==0)?speed:-speed; break;
+        case 3: v->vy=0; v->vx=(v->lane==0)?-speed:speed; break;
+        default: v->vx=v->vy=0; break;
+    }
 }
 
 static void InitVehicles(void) {
-    for (int i = 0; i < MAX_VEH; i++) vehicles[i].active = false;
+    for(int i=0;i<MAX_VEH;i++) vehicles[i].active=false;
 }
 
+
+// Lane counting & averaging
+
 static int LaneCount(int road, int lane) {
-    int c = 0;
-    for (int i = 0; i < MAX_VEH; i++) {
-        if (vehicles[i].active && vehicles[i].road == road && vehicles[i].lane == lane) c++;
-    }
+    int c=0;
+    for(int i=0;i<MAX_VEH;i++)
+        if(vehicles[i].active && vehicles[i].road==road && vehicles[i].lane==lane) c++;
     return c;
 }
 
-// Generate a random vehicle plate similar to traffic_generator.c
-static void GenerateVehicleNumber(char *buffer) {
-    buffer[0] = 'A' + GetRandomValue(0, 25);
-    buffer[1] = 'A' + GetRandomValue(0, 25);
-    buffer[2] = '0' + GetRandomValue(0, 9);
-    buffer[3] = 'A' + GetRandomValue(0, 25);
-    buffer[4] = 'A' + GetRandomValue(0, 25);
-    buffer[5] = '0' + GetRandomValue(0, 9);
-    buffer[6] = '0' + GetRandomValue(0, 9);
-    buffer[7] = '0' + GetRandomValue(0, 9);
-    buffer[8] = '\0';
-}
-
-// Average queue length across controlled lanes (BL2, CL2, DL2)
 static float calculateAverageVehicles(void) {
-    int sum = 0;
-    // include all four approaches' L2 (outgoing) lanes so green durations reflect overall demand
-    sum += LaneCount(0, 1); // road A, lane L2
-    sum += LaneCount(1, 1); // road B, lane L2
-    sum += LaneCount(2, 1); // road C, lane L2
-    sum += LaneCount(3, 1); // road D, lane L2
-    return sum / 4.0f;      // n = 4 lanes
+    int sum = LaneCount(0,1)+LaneCount(1,1)+LaneCount(2,1)+LaneCount(3,1);
+    return sum/4.0f;
 }
 
-// Green duration derived from average vehicles; clamp to at least one vehicle slot
 static float calculateGreenDuration(void) {
     float avg = calculateAverageVehicles();
-    float duration = avg * TIME_PER_VEHICLE;
-    if (duration < TIME_PER_VEHICLE) duration = TIME_PER_VEHICLE;
+    float duration = avg*TIME_PER_VEHICLE;
+    if(duration<TIME_PER_VEHICLE) duration=TIME_PER_VEHICLE;
     return duration;
 }
 
 static void UpdateAl2PriorityState(void) {
-    int al2Count = LaneCount(0, 1);
-    if (!al2PriorityActive && al2Count >= PRIORITY_ON_THRESHOLD) {
-        al2PriorityActive = true;
-        currentGreen = 0;
-        phaseTimer = 0.0f;
-    } else if (al2PriorityActive && al2Count <= PRIORITY_OFF_THRESHOLD) {
-        al2PriorityActive = false;
-        phaseTimer = 0.0f;
-        currentGreenDuration = calculateGreenDuration();
+    int al2Count = LaneCount(0,1);
+    if(!al2PriorityActive && al2Count>=PRIORITY_ON_THRESHOLD){
+        al2PriorityActive=true;
+        currentGreen=0;
+        phaseTimer=0.0f;
+    } else if(al2PriorityActive && al2Count<=PRIORITY_OFF_THRESHOLD){
+        al2PriorityActive=false;
+        phaseTimer=0.0f;
+        currentGreenDuration=calculateGreenDuration();
     }
 }
 
-// Deterministic rotation among controlled roads: B -> C -> D -> B ...
-// Deterministic rotation among controlled roads: A -> B -> C -> D -> A ...
-static int NextControlledRoad(int road) {
-    return (road + 1) % 4;
+// Vehicle plate generator
+
+static void GenerateVehicleNumber(char *buffer) {
+    buffer[0]='A'+GetRandomValue(0,25);
+    buffer[1]='A'+GetRandomValue(0,25);
+    buffer[2]='0'+GetRandomValue(0,9);
+    buffer[3]='A'+GetRandomValue(0,25);
+    buffer[4]='A'+GetRandomValue(0,25);
+    buffer[5]='0'+GetRandomValue(0,9);
+    buffer[6]='0'+GetRandomValue(0,9);
+    buffer[7]='0'+GetRandomValue(0,9);
+    buffer[8]='\0';
 }
 
-// Spawn a vehicle at the edge of a given road/lane
-static void SpawnVehicle(int road, int lane, const char *plateOpt) {
-    for (int i = 0; i < MAX_VEH; i++) {
-        if (!vehicles[i].active) {
-            vehicles[i].active = true;
-            vehicles[i].road = road;
-            vehicles[i].lane = lane;
-            if (plateOpt) strncpy(vehicles[i].plate, plateOpt, sizeof(vehicles[i].plate));
-            else GenerateVehicleNumber(vehicles[i].plate);
-            vehicles[i].plate[sizeof(vehicles[i].plate)-1] = '\0';
-
-            float lateral = LaneLateralOffset(road, lane);
-            switch (road) {
-                case 0: // A from top downward
-                    vehicles[i].x = centerX + lateral;
-                    vehicles[i].y = -40;
-                    break;
-                case 1: // B from bottom upward
-                    vehicles[i].x = centerX + lateral;
-                    vehicles[i].y = screenH + 40;
-                    break;
-                case 2: // C from right leftward
-                    vehicles[i].x = screenW + 40;
-                    vehicles[i].y = centerY + lateral;
-                    break;
-                case 3: // D from left rightward
-                    vehicles[i].x = -40;
-                    vehicles[i].y = centerY + lateral;
-                    break;
-            }
-            SetLaneSpeed(&vehicles[i], 120.0f);
-            break;
-        }
-    }
-}
 
 // Lane rules:
 // - L1 (lane index 0) = incoming lane (does NOT obey traffic light here)
@@ -223,66 +207,77 @@ static float LeadGap(const Vehicle *self) {
     return best;
 }
 
-static int RoadLeft(int road) {
-    static const int map[4] = {3, 2, 0, 1};
-    return map[road & 3];
+
+
+// Spawn vehicle
+static void SpawnVehicle(int road, int lane, const char *plateOpt) {
+    for(int i=0;i<MAX_VEH;i++){
+        if(!vehicles[i].active){
+            vehicles[i].active=true;
+            vehicles[i].road=road;
+            vehicles[i].lane=lane;
+            if(plateOpt) strncpy(vehicles[i].plate,plateOpt,sizeof(vehicles[i].plate));
+            else GenerateVehicleNumber(vehicles[i].plate);
+            vehicles[i].plate[sizeof(vehicles[i].plate)-1]='\0';
+
+            float lateral = LaneLateralOffset(road,lane);
+            switch(road){
+                case 0: vehicles[i].x=centerX+lateral; vehicles[i].y=-40; break;
+                case 1: vehicles[i].x=centerX+lateral; vehicles[i].y=screenH+40; break;
+                case 2: vehicles[i].x=screenW+40; vehicles[i].y=centerY+lateral; break;
+                case 3: vehicles[i].x=-40; vehicles[i].y=centerY+lateral; break;
+            }
+            SetLaneSpeed(&vehicles[i], 120.0f);
+
+            // enqueue vehicle in the lane queue
+            Enqueue(&laneQueues[road][lane], i);
+            break;
+        }
+    }
 }
 
-static int RoadRight(int road) {
-    static const int map[4] = {2, 3, 1, 0};
-    return map[road & 3];
-}
 
-static int RoadOpposite(int road) {
-    static const int map[4] = {1, 0, 3, 2};
-    return map[road & 3];
-}
+// Intersection transitions
 
 static Vector2 Lane0SpawnPoint(int road) {
-    Vector2 pos = {(float)centerX, (float)centerY};
-    const float exitOffset = CAR_LEN;
-    float lateral = LaneLateralOffset(road, 0);
-    switch (road) {
-        case 0: // A incoming moves upward
-            pos.x = centerX + lateral;
-            pos.y = centerY - roadWidth/2 - exitOffset;
-            break;
-        case 1: // B incoming moves downward
-            pos.x = centerX + lateral;
-            pos.y = centerY + roadWidth/2 + exitOffset;
-            break;
-        case 2: // C incoming moves rightward
-            pos.x = centerX + roadWidth/2 + exitOffset;
-            pos.y = centerY + lateral;
-            break;
-        case 3: // D incoming moves leftward
-            pos.x = centerX - roadWidth/2 - exitOffset;
-            pos.y = centerY + lateral;
-            break;
-        default:
-            break;
+    Vector2 pos={(float)centerX,(float)centerY};
+    const float exitOffset=CAR_LEN;
+    float lateral=LaneLateralOffset(road,0);
+    switch(road){
+        case 0: pos.x=centerX+lateral; pos.y=centerY-roadWidth/2-exitOffset; break;
+        case 1: pos.x=centerX+lateral; pos.y=centerY+roadWidth/2+exitOffset; break;
+        case 2: pos.x=centerX+roadWidth/2+exitOffset; pos.y=centerY+lateral; break;
+        case 3: pos.x=centerX-roadWidth/2-exitOffset; pos.y=centerY+lateral; break;
     }
     return pos;
 }
 
+static int RoadLeft(int road){ static const int map[4]={3,2,0,1}; return map[road&3]; }
+static int RoadRight(int road){ static const int map[4]={2,3,1,0}; return map[road&3]; }
+static int RoadOpposite(int road){ static const int map[4]={1,0,3,2}; return map[road&3]; }
+
 static void TransitionVehicleThroughIntersection(Vehicle *v) {
-    int originRoad = v->road;
-    int originLane = v->lane;
+    int originRoad=v->road;
+    int originLane=v->lane;
 
-    int destRoad = originRoad;
-    if (originLane == 2) {
-        destRoad = RoadLeft(originRoad);
-    } else {
-        destRoad = (GetRandomValue(0, 1) == 0) ? RoadOpposite(originRoad) : RoadRight(originRoad);
-    }
+    // remove from queue if L2
+    if(originLane==1) Dequeue(&laneQueues[originRoad][originLane]);
 
-    v->road = destRoad;
-    v->lane = 0;
-    Vector2 pos = Lane0SpawnPoint(destRoad);
-    v->x = pos.x;
-    v->y = pos.y;
+    int destRoad;
+    if(originLane==2) destRoad=RoadLeft(originRoad);
+    else destRoad=(GetRandomValue(0,1)==0)?RoadOpposite(originRoad):RoadRight(originRoad);
+
+    v->road=destRoad;
+    v->lane=0;
+    Vector2 pos=Lane0SpawnPoint(destRoad);
+    v->x=pos.x; v->y=pos.y;
     SetLaneSpeed(v, VEH_SPEED);
+
+    // enqueue in new lane if L2
+    if(v->lane==1) Enqueue(&laneQueues[destRoad][v->lane], v-vehicles);
 }
+
+
 
 static void UpdateVehicles(float dt) {
     float stopOffset = roadWidth / 2.0f + 15.0f; // stop line distance to center
@@ -550,65 +545,52 @@ static void PollVehicleFile(void) {
     fclose(f);
 }
 
+// Main loop
+
 int main(void) {
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(screenW, screenH, "Queue Simulator - Raylib UI");
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE|FLAG_VSYNC_HINT);
+    InitWindow(screenW,screenH,"Queue Simulator - Raylib UI");
     SetTargetFPS(60);
 
     InitVehicles();
+    InitQueues(); // initialize lane queues
     SetRandomSeed((unsigned int)GetTime());
 
-    // Initialize first green duration using current queue snapshot
-    currentGreenDuration = calculateGreenDuration();
+    currentGreenDuration=calculateGreenDuration();
 
-    while (!WindowShouldClose()) {
-        float dt = GetFrameTime();
+    while(!WindowShouldClose()){
+        float dt=GetFrameTime();
 
-        // Responsive layout: update size each frame
-        screenW = GetScreenWidth();
-        screenH = GetScreenHeight();
-        int newCenterX = screenW / 2;
-        int newCenterY = screenH / 2;
-
-        // Shift all active vehicles by the delta so they stay in-lane after resize
-        int dx = newCenterX - centerX;
-        int dy = newCenterY - centerY;
-        if (dx != 0 || dy != 0) {
-            for (int i = 0; i < MAX_VEH; i++) {
-                if (vehicles[i].active) {
-                    vehicles[i].x += dx;
-                    vehicles[i].y += dy;
-                }
-            }
+        // handle window resize
+        screenW=GetScreenWidth(); screenH=GetScreenHeight();
+        int newCenterX=screenW/2; int newCenterY=screenH/2;
+        int dx=newCenterX-centerX, dy=newCenterY-centerY;
+        if(dx!=0||dy!=0){
+            for(int i=0;i<MAX_VEH;i++)
+                if(vehicles[i].active){ vehicles[i].x+=dx; vehicles[i].y+=dy; }
         }
-        prevCenterX = centerX;
-        prevCenterY = centerY;
-        centerX = newCenterX;
-        centerY = newCenterY;
+        centerX=newCenterX; centerY=newCenterY;
 
-        // Pull new vehicles appended by traffic_generator.c so priority reacts immediately
+        // pull new vehicles from file
         PollVehicleFile();
 
-        // Refresh AL2 priority state before progressing the signal FSM
+        // update AL2 priority
         UpdateAl2PriorityState();
 
-        // Light FSM: honor AL2 priority, otherwise rotate through the normal cycle
-        if (al2PriorityActive) {
-            currentGreen = 0;
-            phaseTimer = 0.0f;
-        } else {
-            phaseTimer += dt;
-            if (phaseTimer >= currentGreenDuration) {
-                phaseTimer = 0.0f;
-                currentGreen = NextControlledRoad(currentGreen);
-                currentGreenDuration = calculateGreenDuration();
+        // traffic light logic
+        if(al2PriorityActive){ currentGreen=0; phaseTimer=0.0f; }
+        else{
+            phaseTimer+=dt;
+            if(phaseTimer>=currentGreenDuration){
+                phaseTimer=0.0f;
+                currentGreen=(currentGreen+1)%4;
+                currentGreenDuration=calculateGreenDuration();
             }
         }
 
-        // Decay lane saturation timers
-        for (int r = 0; r < 4; r++)
-            for (int l = 0; l < 3; l++)
-                if (laneSatTimer[r][l] > 0) laneSatTimer[r][l] -= dt;
+        // decay lane saturation timers
+        for(int r=0;r<4;r++) for(int l=0;l<3;l++)
+            if(laneSatTimer[r][l]>0) laneSatTimer[r][l]-=dt;
 
         UpdateVehicles(dt);
 
@@ -620,11 +602,10 @@ int main(void) {
         DrawLaneLabels();
         DrawLaneAlerts();
         DrawPriorityStatus();
-        if (al2PriorityActive) {
-            DrawText("Green: A (AL2 priority hold)", 20, 20, 22, BLACK);
-        } else {
-            DrawText(TextFormat("Green: %c   Phase: %.1f/%.1f", 'A'+currentGreen, phaseTimer, currentGreenDuration), 20, 20, 22, BLACK);
-        }
+        if(al2PriorityActive)
+            DrawText("Green: A (AL2 priority hold)",20,20,22,BLACK);
+        else
+            DrawText(TextFormat("Green: %c   Phase: %.1f/%.1f",'A'+currentGreen,phaseTimer,currentGreenDuration),20,20,22,BLACK);
         EndDrawing();
     }
 
