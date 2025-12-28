@@ -77,7 +77,7 @@ This approach reduces congestion in the priority lane while maintaining fair ser
 |---------------|---------------|---------|
 | **Array (Static)** | Vehicle vehicles[MAX_VEH]  <br> Fixed-size array of 64 vehicle structs | Vehicle pool management – stores all active and inactive vehicles in the simulation |
 | **Implicit Queue** | Vehicles in the same road + lane form a queue through spatial ordering and car-following behavior | Models traffic lanes as FIFO queues where vehicles spawn at rear (road edge), wait in order, and exit from front (intersection) |
-| **Priority Queue (Conceptual)** | al2PriorityActive flag + threshold-based logic (AL2 count ≥ 10) | Implements priority lane behavior – AL2 lane gets preferential green light service when queue length exceeds threshold |
+| **Priority Queue (Conceptual)** | al2PriorityActive flag + threshold-based logic (AL2 count ≥ 10) | Implements priority lane behavior – AL2 lane gets preference for green light when vehicles is equals to or greater than 10 |
 | **Struct** | typedef struct { float x, y, vx, vy; int road, lane; bool active; char plate[10]; } Vehicle; | Encapsulates vehicle state including position, velocity, road/lane assignment, and identification |
 | **2D Array** | float laneSatTimer[4][3]  <br> 4 roads × 3 lanes | Tracks saturation alert timers for each lane to display warnings when queue length ≥ 10 |
 <br>
