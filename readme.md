@@ -264,6 +264,7 @@ Simulator
 simulator.exe`
 
 ## References
+
 ### Raylib Documentation
 
 Raylib API Reference: https://www.raylib.com/cheatsheet/cheatsheet.html <br>
@@ -278,7 +279,3 @@ File Handling in C: https://www.youtube.com/watch?v=qg69AXmHhx8 <br>
 Similar Traffic Simulation Project: https://www.youtube.com/watch?v=rIrViyBiS7E <br>
 
 #### Note: The system improves saturation in only a single priority lane in real world scenariors it can be modified to make complex systems to get efficient flow of vehicles.
-
-
-
-
