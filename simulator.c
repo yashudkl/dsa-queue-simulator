@@ -7,9 +7,9 @@
 #include <string.h>
 #include <stdbool.h>
 
-// =======================
+
 // Vehicle structure
-// =======================
+
 typedef struct {
     float x, y;       // position
     float vx, vy;     // velocity
@@ -61,9 +61,8 @@ static int Dequeue(LaneQueue *q) {
     return idx;
 }
 
-// =======================
 // Simulation variables
-// =======================
+
 static int currentGreen = 1;          
 static float phaseTimer = 0.0f;       
 static float currentGreenDuration = 0.0f;
@@ -79,9 +78,9 @@ static bool al2PriorityActive = false;
 static const int PRIORITY_ON_THRESHOLD = 10;
 static const int PRIORITY_OFF_THRESHOLD = 5;
 
-// =======================
+
 // Layout
-// =======================
+
 static int screenW = 1200;
 static int screenH = 900;
 static const int roadWidth = 180;
